@@ -9,11 +9,15 @@ module JSON
       attribute :max_items
       attribute :unique_items
 
+      def to_h
+        super.merge(items: @items.to_h)
+      end
+
       def items(*args, &block)
+        return @items if args.empty? && !block_given?
+
         opts = args.extract_options!
-        schema[:items] = args.first
-        schema[:items] ||= items_entity(opts, &block).as_json
-        parent.reinitialize if parent
+        @items = args.first || items_entity(opts, &block)
       end
 
       protected
@@ -23,7 +27,7 @@ module JSON
         if opts[:type]
           send opts.delete(:type), opts, &block
         else
-          Entity.new(nil, opts, &block).tap &:merge_children!
+          Entity.new(nil, opts, &block).tap(&:merge_children!)
         end
       end
     end

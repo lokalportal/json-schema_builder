@@ -1,6 +1,7 @@
 require_relative 'dsl'
 require_relative 'schema'
 require_relative 'attribute'
+require_relative 'lazy_render'
 require_relative 'validation'
 require_relative 'helpers'
 
@@ -11,14 +12,19 @@ module JSON
       include Attribute
       include Validation
       include Helpers
+      include LazyRender
       class_attribute :registered_type
       attr_accessor :name, :parent, :children, :options, :fragment, :fragments, :error
+
+      delegate :as_json, to: :to_h
+      delegate :to_json, to: :as_json
 
       attribute :title
       attribute :description
 
       attribute :type
       attribute :default
+      attribute :required
       attribute :enum, array: true
       attribute :all_of, array: true
       attribute :any_of, array: true
@@ -43,13 +49,19 @@ module JSON
         initialize_parent_with opts
         initialize_with opts
         eval_block &block
-        any_of(null) if @nullable
-        extract_types
         @initialized = true
       end
 
       def initialized?
         !!@initialized
+      end
+
+      def collection?
+        [any_of, one_of, all_of].any?(&:present?)
+      end
+
+      def attribute_values
+        super.merge(required: required)
       end
 
       def reinitialize
@@ -77,8 +89,11 @@ module JSON
         @schema ||= Schema.new({}, self)
       end
 
-      def required
-        schema["required"] || []
+      def required_r(val = nil)
+        return self.required = val if val == true
+        puts schema['required']
+
+        _array_attr :required, Array(val)
       end
 
       def required=(*values)
@@ -86,15 +101,27 @@ module JSON
         @parent.schema["required"] << @name if values.any?
       end
 
-      def merge_children!
-        return if any_of.present?
-        children.each do |child|
-          schema.merge! child.schema
-        end
+      def properties
+        children.select(&:name).map { |ch| [ch.name.to_sym, ch.to_h] }.to_h
       end
 
-      def as_json
-        schema.as_json
+      def merge_children!
+        return if any_of.present?
+
+        grand_children = children.flat_map(&:children).uniq
+        aliases = self.class.attribute_aliases.invert
+        children
+          .map(&:attribute_values)
+          .map(&:compact)
+          .reduce(&:merge)
+          .map { |key, v| [aliases[key], v] }
+          .reject { |k, _v| k.nil? }
+          .each { |att_name, value| send(att_name, value) }
+        self.children = grand_children
+      end
+
+      def instantiate
+        target_type = type || 'entity'
       end
 
       def inspect
@@ -139,7 +166,6 @@ module JSON
       end
 
       def extract_types
-        build_any_of if any_of.present?
       end
 
       def build_any_of
@@ -168,8 +194,11 @@ module JSON
         end
       end
 
+      def null=(value)
+        @null = value.tap { self.any_of |= [null] if value }
+      end
+
       def initialize_with(opts)
-        @nullable = opts.delete :null
         @options = opts.delete(:root).class.options.to_h if opts[:root]
         opts.each_pair do |key, value|
           next if value.nil?

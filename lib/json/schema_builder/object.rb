@@ -4,14 +4,33 @@ module JSON
   module SchemaBuilder
     class Object < Entity
       register :object
-      attribute :required
       attribute :min_properties
       attribute :max_properties
-      attribute :properties
       attribute :additional_properties
       attribute :pattern_properties
 
+      def to_h
+        base = super
+        return base if hash_collection?(base)
+
+        base.merge(
+          { required: required }
+          .transform_values(&:presence)
+          .symbolize_keys
+          .compact
+        ).reverse_merge(properties: {})
+      end
+
+      def attribute_values
+        super.merge(properties: properties)
+      end
+
+      def hash_collection?(hash)
+        %i[anyOf allOf oneOf].any? { |k| hash.key?(k) }
+      end
+
       def initialize_children
+        return
         self.properties = { }
 
         children.select(&:name).each do |child|
@@ -35,19 +54,6 @@ module JSON
         return unless initialized?
         extract_types
       end
-
-      def required(*values)
-        case values
-        when []
-          @schema[:required]
-        when [true]
-          @parent.required ||= []
-          @parent.required << @name
-        else
-          @schema[:required] = values.flatten
-        end
-      end
-      alias_method :required=, :required
     end
   end
 end
