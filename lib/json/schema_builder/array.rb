@@ -17,7 +17,7 @@ module JSON
         return @items if args.empty? && !block_given?
 
         opts = args.extract_options!
-        @items = args.first || items_entity(opts, &block)
+        @items = (args.first || items_entity(opts, &block)).instantiate
       end
 
       protected

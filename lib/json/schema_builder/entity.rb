@@ -120,10 +120,6 @@ module JSON
         self.children = grand_children
       end
 
-      def instantiate
-        target_type = type || 'entity'
-      end
-
       def inspect
         "#<#{self.class.name}:#{object_id} @schema=#{schema.as_json}>"
       end
@@ -141,6 +137,17 @@ module JSON
           @parent_context.send method_name, *args, &block
         else
           super
+        end
+      end
+
+      def instantiate
+        return self unless self.class == Entity
+        send(type).tap do |e|
+          (e.class.registered_attributes & self.class.registered_attributes)
+            .each do |att|
+              e.send(att, send(att))
+            end
+          e.children = children.dup
         end
       end
 
