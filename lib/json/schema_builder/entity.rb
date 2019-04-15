@@ -144,6 +144,7 @@ module JSON
         return self unless self.class == Entity
         send(type).tap do |e|
           (e.class.registered_attributes & self.class.registered_attributes)
+            .compact
             .each do |att|
               e.send(att, send(att))
             end
